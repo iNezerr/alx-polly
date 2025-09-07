@@ -1,6 +1,13 @@
 'use client'
 
 import { useState } from 'react'
+import { useAuth } from '@/context/AuthContext'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card'
+import Link from 'next/link'
+import { useRouter } from 'next/navigation'
 
 interface RegisterFormData {
   email: string
@@ -18,6 +25,9 @@ export default function RegisterForm() {
   })
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [success, setSuccess] = useState<string | null>(null)
+  const { signUp } = useAuth()
+  const router = useRouter()
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target
@@ -36,6 +46,10 @@ export default function RegisterForm() {
       setError('Password must be at least 6 characters long')
       return false
     }
+    if (!formData.fullName.trim()) {
+      setError('Full name is required')
+      return false
+    }
     return true
   }
 
@@ -43,6 +57,7 @@ export default function RegisterForm() {
     e.preventDefault()
     setIsLoading(true)
     setError(null)
+    setSuccess(null)
 
     if (!validateForm()) {
       setIsLoading(false)
@@ -50,113 +65,120 @@ export default function RegisterForm() {
     }
 
     try {
-      // Placeholder - will be replaced with Supabase auth
-      console.log('Registration attempt:', { 
-        email: formData.email, 
-        fullName: formData.fullName 
-      })
+      const { error } = await signUp(formData.email, formData.password, formData.fullName)
       
-      // Simulate API call
-      await new Promise(resolve => setTimeout(resolve, 1000))
-      
-      // TODO: Replace with actual Supabase authentication
-      console.log('Registration successful!')
+      if (error) {
+        setError(error)
+      } else {
+        setSuccess('Account created successfully! Please check your email to verify your account.')
+        // Optional: redirect to login after a delay
+        setTimeout(() => router.push('/auth/login'), 3000)
+      }
     } catch (err) {
-      setError('Registration failed. Please try again.')
+      setError('An unexpected error occurred. Please try again.')
     } finally {
       setIsLoading(false)
     }
   }
 
   return (
-    <form onSubmit={handleSubmit} className="mt-8 space-y-6">
-      {error && (
-        <div className="rounded-md bg-red-50 p-4">
-          <p className="text-sm text-red-700">{error}</p>
-        </div>
-      )}
-      
-      <div className="space-y-4">
-        <div>
-          <label htmlFor="fullName" className="block text-sm font-medium text-gray-700">
-            Full Name
-          </label>
-          <input
-            id="fullName"
-            name="fullName"
-            type="text"
-            required
-            value={formData.fullName}
-            onChange={handleChange}
-            className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-blue-500 focus:border-blue-500"
-            placeholder="Enter your full name"
-          />
-        </div>
+    <Card className="w-full max-w-md mx-auto">
+      <CardHeader className="space-y-1">
+        <CardTitle className="text-2xl font-bold">Create account</CardTitle>
+        <CardDescription>
+          Enter your details to create your ALX Polly account
+        </CardDescription>
+      </CardHeader>
+      <form onSubmit={handleSubmit}>
+        <CardContent className="space-y-4">
+          {error && (
+            <div className="rounded-md bg-destructive/15 p-3 text-sm text-destructive">
+              {error}
+            </div>
+          )}
+          
+          {success && (
+            <div className="rounded-md bg-green-50 p-3 text-sm text-green-700">
+              {success}
+            </div>
+          )}
+          
+          <div className="space-y-2">
+            <Label htmlFor="fullName">Full Name</Label>
+            <Input
+              id="fullName"
+              name="fullName"
+              type="text"
+              required
+              value={formData.fullName}
+              onChange={handleChange}
+              placeholder="Enter your full name"
+              disabled={isLoading}
+            />
+          </div>
 
-        <div>
-          <label htmlFor="email" className="block text-sm font-medium text-gray-700">
-            Email address
-          </label>
-          <input
-            id="email"
-            name="email"
-            type="email"
-            required
-            value={formData.email}
-            onChange={handleChange}
-            className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-blue-500 focus:border-blue-500"
-            placeholder="Enter your email"
-          />
-        </div>
-        
-        <div>
-          <label htmlFor="password" className="block text-sm font-medium text-gray-700">
-            Password
-          </label>
-          <input
-            id="password"
-            name="password"
-            type="password"
-            required
-            value={formData.password}
-            onChange={handleChange}
-            className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-blue-500 focus:border-blue-500"
-            placeholder="Enter your password"
-          />
-        </div>
+          <div className="space-y-2">
+            <Label htmlFor="email">Email address</Label>
+            <Input
+              id="email"
+              name="email"
+              type="email"
+              required
+              value={formData.email}
+              onChange={handleChange}
+              placeholder="Enter your email"
+              disabled={isLoading}
+            />
+          </div>
+          
+          <div className="space-y-2">
+            <Label htmlFor="password">Password</Label>
+            <Input
+              id="password"
+              name="password"
+              type="password"
+              required
+              value={formData.password}
+              onChange={handleChange}
+              placeholder="Enter your password"
+              disabled={isLoading}
+            />
+            <p className="text-xs text-muted-foreground">
+              Password must be at least 6 characters long
+            </p>
+          </div>
 
-        <div>
-          <label htmlFor="confirmPassword" className="block text-sm font-medium text-gray-700">
-            Confirm Password
-          </label>
-          <input
-            id="confirmPassword"
-            name="confirmPassword"
-            type="password"
-            required
-            value={formData.confirmPassword}
-            onChange={handleChange}
-            className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-blue-500 focus:border-blue-500"
-            placeholder="Confirm your password"
-          />
-        </div>
-      </div>
-
-      <div>
-        <button
-          type="submit"
-          disabled={isLoading}
-          className="group relative w-full flex justify-center py-2 px-4 border border-transparent text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
-        >
-          {isLoading ? 'Creating account...' : 'Create account'}
-        </button>
-      </div>
-
-      <div className="text-center">
-        <a href="/auth/login" className="text-sm text-blue-600 hover:text-blue-500">
-          Already have an account? Sign in
-        </a>
-      </div>
-    </form>
+          <div className="space-y-2">
+            <Label htmlFor="confirmPassword">Confirm Password</Label>
+            <Input
+              id="confirmPassword"
+              name="confirmPassword"
+              type="password"
+              required
+              value={formData.confirmPassword}
+              onChange={handleChange}
+              placeholder="Confirm your password"
+              disabled={isLoading}
+            />
+          </div>
+        </CardContent>
+        <CardFooter className="flex flex-col space-y-4">
+          <Button
+            type="submit"
+            className="w-full"
+            disabled={isLoading}
+          >
+            {isLoading ? 'Creating account...' : 'Create account'}
+          </Button>
+          
+          <p className="text-center text-sm text-muted-foreground">
+            Already have an account?{' '}
+            <Link href="/auth/login" className="font-medium text-primary hover:underline">
+              Sign in
+            </Link>
+          </p>
+        </CardFooter>
+      </form>
+    </Card>
   )
 }
