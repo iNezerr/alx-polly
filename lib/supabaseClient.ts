@@ -1,18 +1,18 @@
-// Supabase client configuration
-// This will be implemented after installing Supabase
+import { createClient } from '@supabase/supabase-js'
 
-export interface SupabaseConfig {
-  url: string
-  anonKey: string
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
+const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+
+if (!supabaseUrl) {
+  throw new Error('Missing env.NEXT_PUBLIC_SUPABASE_URL')
 }
 
-// Placeholder - will be replaced with actual Supabase client
-export const supabase = null
+if (!supabaseAnonKey) {
+  throw new Error('Missing env.NEXT_PUBLIC_SUPABASE_ANON_KEY')
+}
 
-// TODO: Implement after Supabase installation
-// import { createClient } from '@supabase/supabase-js'
-// 
-// const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
-// const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-// 
-// export const supabase = createClient(supabaseUrl, supabaseAnonKey)
+export const supabase = createClient(supabaseUrl, supabaseAnonKey)
+
+export type Database = {
+  // Add your database types here when you create tables
+}
