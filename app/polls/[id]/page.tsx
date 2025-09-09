@@ -1,12 +1,13 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { useAuth } from '@/context/AuthContext';
-import { supabase } from '@/lib/supabaseClient';
+import { usePoll, useVoting } from '@/hooks/usePoll';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { PageHeader, LoadingSpinner, NotFoundDisplay, PollStatistics, PollActions } from '@/components/shared';
 import { useParams, useRouter } from 'next/navigation';
-import { ArrowLeft, BarChart3, QrCode, Edit, Share2, Vote } from 'lucide-react';
+import { Vote } from 'lucide-react';
 import Link from 'next/link';
 
 /**
@@ -34,32 +35,6 @@ import Link from 'next/link';
  */
 
 /**
- * Poll Option Interface
- * 
- * Represents a single voting option within a poll with vote count information.
- */
-interface PollOption {
-  id: string;
-  option_text: string;
-  votes_count: number;
-}
-
-/**
- * Poll Interface
- * 
- * Represents a complete poll with all associated data including options and vote counts.
- */
-interface Poll {
-  id: string;
-  title: string;
-  question: string;
-  created_at: string;
-  user_id: string;
-  poll_options: PollOption[];
-  total_votes: number;
-}
-
-/**
  * Poll Page Component
  * 
  * Renders a poll with voting interface or results display based on user state.
@@ -74,98 +49,14 @@ export default function PollPage() {
   const router = useRouter();
   const pollId = params.id as string;
   
-  // Component state management
-  const [poll, setPoll] = useState<Poll | null>(null);
-  const [loading, setLoading] = useState(true);
+  // Poll data and operations
+  const { poll, loading, error, refetch } = usePoll(pollId);
+  
+  // Voting state and operations
+  const { hasVoted, voting, submitVote } = useVoting(pollId);
+  
+  // Local state for selected option
   const [selectedOption, setSelectedOption] = useState<string>('');
-  const [hasVoted, setHasVoted] = useState(false);
-  const [isVoting, setIsVoting] = useState(false);
-
-  useEffect(() => {
-    if (pollId) {
-      fetchPoll();
-      checkIfUserVoted();
-    }
-  }, [pollId, user]);
-
-  /**
-   * Fetch Poll Data
-   * 
-   * Retrieves poll information including options and vote counts from the database.
-   * Uses Supabase's relational queries to fetch poll options and aggregate vote counts.
-   * Handles data transformation to create a complete poll object with vote statistics.
-   */
-  const fetchPoll = async () => {
-    try {
-      const { data, error } = await supabase
-        .from('polls')
-        .select(`
-          id,
-          title,
-          question,
-          created_at,
-          user_id,
-          poll_options (
-            id,
-            option_text,
-            votes (count)
-          )
-        `)
-        .eq('id', pollId)
-        .single();
-
-      if (error) throw error;
-
-      /**
-       * Transform Poll Data
-       * 
-       * Processes the raw database response to create a structured poll object.
-       * Extracts vote counts from nested vote aggregations and calculates total votes.
-       */
-      const formattedPoll = {
-        ...data,
-        poll_options: data.poll_options?.map(option => ({
-          id: option.id,
-          option_text: option.option_text,
-          votes_count: option.votes?.[0]?.count || 0
-        })) || [],
-        total_votes: data.poll_options?.reduce((total, option) => 
-          total + (option.votes?.[0]?.count || 0), 0) || 0
-      };
-
-      setPoll(formattedPoll);
-    } catch (error) {
-      console.error('Error fetching poll:', error);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  /**
-   * Check User Vote Status
-   * 
-   * Determines if the current authenticated user has already voted on this poll.
-   * This prevents duplicate voting and determines the UI state (voting vs results).
-   */
-  const checkIfUserVoted = async () => {
-    if (!user) return;
-
-    try {
-      const { data, error } = await supabase
-        .from('votes')
-        .select('id')
-        .eq('poll_id', pollId)
-        .eq('user_id', user.id)
-        .single();
-
-      if (data) {
-        setHasVoted(true);
-      }
-    } catch (error) {
-      // User hasn't voted yet - this is expected for new users
-      // Error is caught silently as it's not an actual error condition
-    }
-  };
 
   /**
    * Handle Vote Submission
@@ -187,33 +78,12 @@ export default function PollPage() {
       return;
     }
 
-    setIsVoting(true);
-
-    try {
-      /**
-       * Submit Vote to Database
-       * 
-       * Creates a new vote record linking the user, poll, and selected option.
-       * Database constraints prevent duplicate votes from the same user.
-       */
-      const { error } = await supabase
-        .from('votes')
-        .insert({
-          poll_id: pollId,
-          option_id: selectedOption,
-          user_id: user.id
-        });
-
-      if (error) throw error;
-
-      // Update local state to reflect successful vote
-      setHasVoted(true);
-      await fetchPoll(); // Refresh poll data to show updated vote counts
-    } catch (error) {
-      console.error('Error voting:', error);
-      alert('Failed to submit vote. You may have already voted on this poll.');
-    } finally {
-      setIsVoting(false);
+    const result = await submitVote(selectedOption);
+    if (!result.success) {
+      alert(result.error || 'Failed to submit vote');
+    } else {
+      // Refresh poll data to show updated vote counts
+      await refetch();
     }
   };
 
@@ -231,26 +101,18 @@ export default function PollPage() {
 
   // Show loading state while fetching poll data
   if (loading) {
-    return (
-      <div className="container mx-auto px-4 py-8">
-        <div className="flex justify-center items-center min-h-[400px]">
-          <div className="text-lg">Loading poll...</div>
-        </div>
-      </div>
-    );
+    return <LoadingSpinner message="Loading poll..." />;
   }
 
   // Handle poll not found case
   if (!poll) {
     return (
-      <div className="container mx-auto px-4 py-8">
-        <div className="text-center">
-          <h1 className="text-2xl font-bold mb-4">Poll not found</h1>
-          <Link href="/polls">
-            <Button>Back to Polls</Button>
-          </Link>
-        </div>
-      </div>
+      <NotFoundDisplay
+        title="Poll not found"
+        description="The poll you're looking for doesn't exist or has been removed."
+        backUrl="/polls"
+        backText="Back to Polls"
+      />
     );
   }
 
@@ -260,12 +122,12 @@ export default function PollPage() {
   return (
     <div className="container mx-auto px-4 py-8 max-w-2xl">
       {/* Navigation header */}
-      <div className="mb-6">
-        <Link href="/polls" className="flex items-center gap-2 text-muted-foreground hover:text-foreground mb-4">
-          <ArrowLeft className="h-4 w-4" />
-          Back to Polls
-        </Link>
-      </div>
+      <PageHeader
+        title={poll.title}
+        description={poll.question}
+        backUrl="/polls"
+        backText="Back to Polls"
+      />
 
       {/* Poll information card */}
       <Card>
@@ -274,10 +136,11 @@ export default function PollPage() {
           <CardDescription className="text-lg">
             {poll.question}
           </CardDescription>
-          <div className="flex justify-between items-center text-sm text-muted-foreground">
-            <span>Created {new Date(poll.created_at).toLocaleDateString()}</span>
-            <span>{poll.total_votes} total votes</span>
-          </div>
+          <PollStatistics
+            totalVotes={poll.total_votes}
+            optionCount={poll.poll_options.length}
+            createdAt={poll.created_at}
+          />
         </CardHeader>
         
         <CardContent className="space-y-6">
@@ -311,11 +174,11 @@ export default function PollPage() {
               
               <Button
                 onClick={handleVote}
-                disabled={!selectedOption || isVoting}
+                disabled={!selectedOption || voting}
                 className="w-full flex items-center gap-2"
               >
                 <Vote className="h-4 w-4" />
-                {isVoting ? 'Submitting...' : 'Submit Vote'}
+                {voting ? 'Submitting...' : 'Submit Vote'}
               </Button>
             </div>
           ) : (
@@ -359,12 +222,10 @@ export default function PollPage() {
 
           {/* Action buttons for poll management */}
           <div className="flex flex-wrap gap-2 pt-4 border-t">
-            <Link href={`/polls/${poll.id}/results`}>
-              <Button variant="outline" size="sm" className="flex items-center gap-1">
-                <BarChart3 className="h-3 w-3" />
-                Detailed Results
-              </Button>
-            </Link>
+            <PollActions
+              pollId={poll.id}
+              isOwner={isOwner}
+            />
             
             <Button 
               variant="outline" 
@@ -372,26 +233,8 @@ export default function PollPage() {
               className="flex items-center gap-1"
               onClick={copyShareLink}
             >
-              <Share2 className="h-3 w-3" />
-              Share Link
+              <span>Copy Link</span>
             </Button>
-            
-            <Link href={`/polls/${poll.id}/share`}>
-              <Button variant="outline" size="sm" className="flex items-center gap-1">
-                <QrCode className="h-3 w-3" />
-                QR Code
-              </Button>
-            </Link>
-            
-            {/* Show edit button only for poll owners */}
-            {isOwner && (
-              <Link href={`/polls/${poll.id}/edit`}>
-                <Button variant="outline" size="sm" className="flex items-center gap-1">
-                  <Edit className="h-3 w-3" />
-                  Edit Poll
-                </Button>
-              </Link>
-            )}
           </div>
         </CardContent>
       </Card>

@@ -1,12 +1,12 @@
 'use client';
 
-import { useEffect, useState } from 'react';
 import { useAuth } from '@/context/AuthContext';
-import { supabase } from '@/lib/supabaseClient';
+import { useUserPolls } from '@/hooks/usePoll';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { PageHeader, LoadingSpinner, EmptyState, PollStatistics, PollActions } from '@/components/shared';
 import Link from 'next/link';
-import { Plus, Vote, BarChart3, QrCode, Edit, Trash2 } from 'lucide-react';
+import { Plus, Vote } from 'lucide-react';
 
 /**
  * User Polls Dashboard Component
@@ -31,21 +31,6 @@ import { Plus, Vote, BarChart3, QrCode, Edit, Trash2 } from 'lucide-react';
  */
 
 /**
- * Poll Interface for Dashboard
- * 
- * Represents a poll in the dashboard context with aggregated statistics.
- * Includes vote counts and option information for display purposes.
- */
-interface Poll {
-  id: string;
-  title: string;
-  question: string;
-  created_at: string;
-  options: { id: string; text: string; votes: number }[];
-  total_votes: number;
-}
-
-/**
  * User Polls Dashboard Component
  * 
  * Renders a dashboard showing all polls created by the authenticated user.
@@ -57,109 +42,28 @@ export default function PollsPage() {
   // Authentication state
   const { user, loading } = useAuth();
   
-  // Component state management
-  const [polls, setPolls] = useState<Poll[]>([]);
-  const [loadingPolls, setLoadingPolls] = useState(true);
-
-  useEffect(() => {
-    if (user) {
-      fetchPolls();
-    } else if (!loading) {
-      // If we're not loading and there's no user, stop loading polls
-      setLoadingPolls(false);
-    }
-  }, [user, loading]);
+  // Poll data and operations
+  const { polls, loading: loadingPolls, error, deletePoll } = useUserPolls();
 
   /**
-   * Fetch User's Polls
+   * Handle Poll Deletion
    * 
-   * Retrieves all polls created by the current authenticated user.
-   * Includes poll options and vote counts through relational queries.
-   * Transforms data for dashboard display with aggregated statistics.
-   */
-  const fetchPolls = async () => {
-    try {
-      const { data, error } = await supabase
-        .from('polls')
-        .select(`
-          id,
-          title,
-          question,
-          created_at,
-          poll_options (
-            id,
-            option_text,
-            votes (count)
-          )
-        `)
-        .eq('user_id', user?.id)
-        .order('created_at', { ascending: false }); // Show newest polls first
-      
-      if (error) throw error;
-
-      /**
-       * Transform Poll Data for Dashboard
-       * 
-       * Processes raw database response to create dashboard-friendly poll objects.
-       * Calculates vote counts and formats option data for display.
-       */
-      const formattedPolls = data?.map(poll => ({
-        id: poll.id,
-        title: poll.title,
-        question: poll.question,
-        created_at: poll.created_at,
-        options: poll.poll_options?.map(option => ({
-          id: option.id,
-          text: option.option_text,
-          votes: option.votes?.[0]?.count || 0
-        })) || [],
-        total_votes: poll.poll_options?.reduce((total, option) => 
-          total + (option.votes?.[0]?.count || 0), 0) || 0
-      })) || [];
-
-      setPolls(formattedPolls);
-    } catch (error) {
-      console.error('Error fetching polls:', error);
-    } finally {
-      setLoadingPolls(false);
-    }
-  };
-
-  /**
-   * Delete Poll
-   * 
-   * Removes a poll from the database after user confirmation.
-   * Updates local state to reflect the deletion immediately.
+   * Deletes a poll after user confirmation and updates local state.
    * 
    * @param pollId - ID of the poll to delete
    */
-  const deletePoll = async (pollId: string) => {
+  const handleDeletePoll = async (pollId: string) => {
     if (!confirm('Are you sure you want to delete this poll?')) return;
 
-    try {
-      const { error } = await supabase
-        .from('polls')
-        .delete()
-        .eq('id', pollId);
-
-      if (error) throw error;
-
-      // Update local state to remove deleted poll
-      setPolls(polls.filter(poll => poll.id !== pollId));
-    } catch (error) {
-      console.error('Error deleting poll:', error);
+    const result = await deletePoll(pollId);
+    if (!result.success) {
+      alert(result.error || 'Failed to delete poll');
     }
   };
 
   // Show loading state while checking authentication and fetching polls
   if (loading || loadingPolls) {
-    return (
-      <div className="container mx-auto px-4 py-8">
-        <div className="flex justify-center items-center min-h-[400px]">
-          <div className="text-lg">Loading your polls...</div>
-        </div>
-      </div>
-    );
+    return <LoadingSpinner message="Loading your polls..." />;
   }
 
   // Redirect unauthenticated users to login
@@ -176,39 +80,44 @@ export default function PollsPage() {
     );
   }
 
+  // Show error state if there's an error fetching polls
+  if (error) {
+    return (
+      <div className="container mx-auto px-4 py-8">
+        <div className="text-center">
+          <h1 className="text-2xl font-bold mb-4">Error loading polls</h1>
+          <p className="text-muted-foreground mb-4">{error}</p>
+          <Button onClick={() => window.location.reload()}>Try Again</Button>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="container mx-auto px-4 py-8">
       {/* Dashboard header with create poll action */}
-      <div className="flex justify-between items-center mb-8">
-        <div>
-          <h1 className="text-3xl font-bold">My Polls</h1>
-          <p className="text-muted-foreground">Create and manage your polls</p>
-        </div>
+      <PageHeader
+        title="My Polls"
+        description="Create and manage your polls"
+        backUrl="/"
+        backText="Back to Home"
+      >
         <Link href="/polls/create">
           <Button className="flex items-center gap-2">
             <Plus className="h-4 w-4" />
             Create Poll
           </Button>
         </Link>
-      </div>
+      </PageHeader>
 
       {polls.length === 0 ? (
-        /**
-         * Empty State
-         * 
-         * Displays when user has no polls yet, encouraging them to create their first poll.
-         * Provides clear call-to-action and helpful messaging.
-         */
-        <div className="text-center py-12">
-          <Vote className="h-16 w-16 mx-auto mb-4 text-muted-foreground" />
-          <h2 className="text-xl font-semibold mb-2">No polls yet</h2>
-          <p className="text-muted-foreground mb-4">
-            Create your first poll to get started
-          </p>
-          <Link href="/polls/create">
-            <Button>Create Your First Poll</Button>
-          </Link>
-        </div>
+        <EmptyState
+          icon={Vote}
+          title="No polls yet"
+          description="Create your first poll to get started"
+          actionText="Create Your First Poll"
+          actionUrl="/polls/create"
+        />
       ) : (
         /**
          * Polls Grid
@@ -228,56 +137,18 @@ export default function PollsPage() {
               <CardContent>
                 <div className="space-y-4">
                   {/* Poll statistics */}
-                  <div className="flex justify-between text-sm text-muted-foreground">
-                    <span>{poll.options.length} options</span>
-                    <span>{poll.total_votes} votes</span>
-                  </div>
+                  <PollStatistics
+                    totalVotes={poll.total_votes}
+                    optionCount={poll.options.length}
+                    createdAt={poll.created_at}
+                  />
                   
                   {/* Poll management actions */}
-                  <div className="flex flex-wrap gap-2">
-                    <Link href={`/polls/${poll.id}`}>
-                      <Button variant="outline" size="sm" className="flex items-center gap-1">
-                        <Vote className="h-3 w-3" />
-                        Vote
-                      </Button>
-                    </Link>
-                    
-                    <Link href={`/polls/${poll.id}/results`}>
-                      <Button variant="outline" size="sm" className="flex items-center gap-1">
-                        <BarChart3 className="h-3 w-3" />
-                        Results
-                      </Button>
-                    </Link>
-                    
-                    <Link href={`/polls/${poll.id}/share`}>
-                      <Button variant="outline" size="sm" className="flex items-center gap-1">
-                        <QrCode className="h-3 w-3" />
-                        Share
-                      </Button>
-                    </Link>
-                    
-                    <Link href={`/polls/${poll.id}/edit`}>
-                      <Button variant="outline" size="sm" className="flex items-center gap-1">
-                        <Edit className="h-3 w-3" />
-                        Edit
-                      </Button>
-                    </Link>
-                    
-                    <Button 
-                      variant="outline" 
-                      size="sm" 
-                      className="flex items-center gap-1 text-red-600 hover:text-red-700"
-                      onClick={() => deletePoll(poll.id)}
-                    >
-                      <Trash2 className="h-3 w-3" />
-                      Delete
-                    </Button>
-                  </div>
-                  
-                  {/* Poll creation date */}
-                  <div className="text-xs text-muted-foreground">
-                    Created {new Date(poll.created_at).toLocaleDateString()}
-                  </div>
+                  <PollActions
+                    pollId={poll.id}
+                    isOwner={true}
+                    onDelete={() => handleDeletePoll(poll.id)}
+                  />
                 </div>
               </CardContent>
             </Card>
