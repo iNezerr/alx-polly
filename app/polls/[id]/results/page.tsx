@@ -8,12 +8,45 @@ import { useParams } from 'next/navigation';
 import { ArrowLeft, Share2, QrCode, Trophy, Users } from 'lucide-react';
 import Link from 'next/link';
 
+/**
+ * Poll Results Page Component
+ * 
+ * Provides a comprehensive view of poll results with detailed analytics and visualizations.
+ * Features real-time updates, winner highlighting, and sharing capabilities.
+ * 
+ * Features:
+ * - Detailed poll results with vote counts and percentages
+ * - Real-time vote updates via Supabase subscriptions
+ * - Winner highlighting with trophy indicators
+ * - Visual progress bars for easy interpretation
+ * - Leading option summary card
+ * - Sharing functionality (link copy and QR code generation)
+ * - Responsive design for all screen sizes
+ * - Empty state handling for polls with no votes
+ * 
+ * @example
+ * ```tsx
+ * // Access via /polls/[id]/results route
+ * <PollResultsPage />
+ * ```
+ */
+
+/**
+ * Poll Option Interface for Results
+ * 
+ * Represents a poll option with vote count information for results display.
+ */
 interface PollOption {
   id: string;
   option_text: string;
   votes_count: number;
 }
 
+/**
+ * Poll Interface for Results
+ * 
+ * Represents a complete poll with results data including sorted options and vote statistics.
+ */
 interface Poll {
   id: string;
   title: string;
@@ -23,7 +56,16 @@ interface Poll {
   total_votes: number;
 }
 
+/**
+ * Poll Results Page Component
+ * 
+ * Renders detailed poll results with real-time updates, winner highlighting,
+ * and comprehensive sharing options.
+ * 
+ * @returns JSX element containing the poll results display
+ */
 export default function PollResultsPage() {
+  // Routing and state management
   const params = useParams();
   const pollId = params.id as string;
   
@@ -34,7 +76,13 @@ export default function PollResultsPage() {
     if (pollId) {
       fetchPollResults();
       
-      // Set up real-time subscription for vote updates
+      /**
+       * Real-time Vote Updates
+       * 
+       * Sets up a Supabase subscription to listen for new votes on this poll.
+       * Automatically refreshes results when new votes are cast.
+       * This provides live updates without requiring page refreshes.
+       */
       const subscription = supabase
         .channel('poll_votes')
         .on('postgres_changes', 
@@ -50,12 +98,20 @@ export default function PollResultsPage() {
         )
         .subscribe();
 
+      // Cleanup subscription on component unmount
       return () => {
         subscription.unsubscribe();
       };
     }
   }, [pollId]);
 
+  /**
+   * Fetch Poll Results
+   * 
+   * Retrieves comprehensive poll data including options and vote counts.
+   * Sorts options by vote count (highest first) for better results presentation.
+   * Handles data transformation to create results-ready poll object.
+   */
   const fetchPollResults = async () => {
     try {
       const { data, error } = await supabase
@@ -76,6 +132,12 @@ export default function PollResultsPage() {
 
       if (error) throw error;
 
+      /**
+       * Transform and Sort Poll Data
+       * 
+       * Processes raw database response and sorts options by vote count.
+       * Calculates vote counts and percentages for results display.
+       */
       const formattedPoll = {
         ...data,
         poll_options: data.poll_options?.map(option => ({
@@ -87,7 +149,7 @@ export default function PollResultsPage() {
           total + (option.votes?.[0]?.count || 0), 0) || 0
       };
 
-      // Sort options by vote count (highest first)
+      // Sort options by vote count (highest first) for results presentation
       formattedPoll.poll_options.sort((a, b) => b.votes_count - a.votes_count);
 
       setPoll(formattedPoll);
@@ -98,12 +160,19 @@ export default function PollResultsPage() {
     }
   };
 
+  /**
+   * Copy Share Link
+   * 
+   * Copies the poll URL to the user's clipboard for easy sharing.
+   * Provides user feedback through browser alert.
+   */
   const copyShareLink = () => {
     const shareUrl = `${window.location.origin}/polls/${pollId}`;
     navigator.clipboard.writeText(shareUrl);
     alert('Share link copied to clipboard!');
   };
 
+  // Show loading state while fetching poll data
   if (loading) {
     return (
       <div className="container mx-auto px-4 py-8">
@@ -114,6 +183,7 @@ export default function PollResultsPage() {
     );
   }
 
+  // Handle poll not found case
   if (!poll) {
     return (
       <div className="container mx-auto px-4 py-8">
@@ -127,11 +197,13 @@ export default function PollResultsPage() {
     );
   }
 
+  // Determine winning option and maximum votes for highlighting
   const winningOption = poll.poll_options[0];
   const maxVotes = Math.max(...poll.poll_options.map(option => option.votes_count));
 
   return (
     <div className="container mx-auto px-4 py-8 max-w-4xl">
+      {/* Navigation header */}
       <div className="mb-6">
         <Link href={`/polls/${pollId}`} className="flex items-center gap-2 text-muted-foreground hover:text-foreground mb-4">
           <ArrowLeft className="h-4 w-4" />
@@ -139,7 +211,7 @@ export default function PollResultsPage() {
         </Link>
       </div>
 
-      {/* Poll Header */}
+      {/* Poll header with basic information */}
       <Card className="mb-6">
         <CardHeader>
           <CardTitle className="text-2xl">{poll.title}</CardTitle>
@@ -156,7 +228,7 @@ export default function PollResultsPage() {
         </CardHeader>
       </Card>
 
-      {/* Results Summary */}
+      {/* Results summary with winning option highlight */}
       {poll.total_votes > 0 && (
         <Card className="mb-6">
           <CardHeader>
@@ -179,7 +251,7 @@ export default function PollResultsPage() {
         </Card>
       )}
 
-      {/* Detailed Results */}
+      {/* Detailed results with progress bars */}
       <Card className="mb-6">
         <CardHeader>
           <CardTitle>Detailed Results</CardTitle>
@@ -189,11 +261,22 @@ export default function PollResultsPage() {
         </CardHeader>
         <CardContent>
           {poll.total_votes === 0 ? (
+            /**
+             * Empty State for No Votes
+             * 
+             * Displays when poll has no votes yet, encouraging sharing.
+             */
             <div className="text-center py-8 text-muted-foreground">
               <Users className="h-12 w-12 mx-auto mb-4 opacity-50" />
               <p>No votes yet. Share this poll to start collecting responses!</p>
             </div>
           ) : (
+            /**
+             * Results Visualization
+             * 
+             * Displays all poll options with vote counts, percentages, and visual progress bars.
+             * Highlights winning options with trophy icons and special styling.
+             */
             <div className="space-y-6">
               {poll.poll_options.map((option, index) => {
                 const percentage = Math.round((option.votes_count / poll.total_votes) * 100);
@@ -206,6 +289,7 @@ export default function PollResultsPage() {
                         <span className="font-medium">
                           #{index + 1} {option.option_text}
                         </span>
+                        {/* Show trophy icon for winning option */}
                         {isWinning && (
                           <Trophy className="h-4 w-4 text-yellow-500" />
                         )}
@@ -218,6 +302,7 @@ export default function PollResultsPage() {
                       </div>
                     </div>
                     
+                    {/* Visual progress bar */}
                     <div className="relative">
                       <div className="w-full bg-muted rounded-full h-4">
                         <div
@@ -236,7 +321,7 @@ export default function PollResultsPage() {
         </CardContent>
       </Card>
 
-      {/* Action Buttons */}
+      {/* Sharing actions */}
       <Card>
         <CardHeader>
           <CardTitle>Share This Poll</CardTitle>

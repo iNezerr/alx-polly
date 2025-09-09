@@ -9,6 +9,33 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 
+/**
+ * Registration Form Component
+ * 
+ * Provides a user interface for creating new user accounts with email, password,
+ * and full name. Includes comprehensive form validation and user feedback.
+ * 
+ * Features:
+ * - Full name, email, and password fields
+ * - Password confirmation validation
+ * - Password strength requirements (minimum 6 characters)
+ * - Real-time form validation
+ * - Loading states during registration
+ * - Success and error message display
+ * - Automatic redirection to login after successful registration
+ * 
+ * @example
+ * ```tsx
+ * <RegisterForm />
+ * ```
+ */
+
+/**
+ * Form Data Interface
+ * 
+ * Defines the structure of the registration form data including all required fields
+ * and password confirmation for validation.
+ */
 interface RegisterFormData {
   email: string
   password: string
@@ -16,7 +43,16 @@ interface RegisterFormData {
   fullName: string
 }
 
+/**
+ * Registration Form Component
+ * 
+ * Renders a registration form with comprehensive validation, handles form submission,
+ * manages loading and error states, and provides user feedback throughout the process.
+ * 
+ * @returns JSX element containing the registration form
+ */
 export default function RegisterForm() {
+  // Form state management
   const [formData, setFormData] = useState<RegisterFormData>({
     email: '',
     password: '',
@@ -26,9 +62,19 @@ export default function RegisterForm() {
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState<string | null>(null)
+  
+  // Authentication context and navigation
   const { signUp } = useAuth()
   const router = useRouter()
 
+  /**
+   * Handle Input Change
+   * 
+   * Updates form data when user types in input fields.
+   * Clears any existing error messages when user starts typing.
+   * 
+   * @param e - React change event from input element
+   */
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target
     setFormData(prev => ({
@@ -37,44 +83,71 @@ export default function RegisterForm() {
     }))
   }
 
+  /**
+   * Validate Form Data
+   * 
+   * Performs client-side validation on form data before submission.
+   * Checks password match, minimum length, and required fields.
+   * 
+   * @returns boolean indicating if form is valid
+   */
   const validateForm = (): boolean => {
+    // Check if passwords match
     if (formData.password !== formData.confirmPassword) {
       setError('Passwords do not match')
       return false
     }
+    
+    // Check password minimum length
     if (formData.password.length < 6) {
       setError('Password must be at least 6 characters long')
       return false
     }
+    
+    // Check if full name is provided
     if (!formData.fullName.trim()) {
       setError('Full name is required')
       return false
     }
+    
     return true
   }
 
+  /**
+   * Handle Form Submission
+   * 
+   * Processes the registration form submission with validation, calls the authentication
+   * service, and manages success/error states with appropriate user feedback.
+   * 
+   * @param e - React form submit event
+   */
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setIsLoading(true)
     setError(null)
     setSuccess(null)
 
+    // Perform client-side validation first
     if (!validateForm()) {
       setIsLoading(false)
       return
     }
 
     try {
+      // Attempt to create new user account
       const { error } = await signUp(formData.email, formData.password, formData.fullName)
       
       if (error) {
+        // Display registration error to user
         setError(error)
       } else {
+        // Show success message and redirect to login
         setSuccess('Account created successfully! Please check your email to verify your account.')
         // Optional: redirect to login after a delay
         setTimeout(() => router.push('/auth/login'), 3000)
       }
     } catch (err) {
+      // Handle unexpected errors (network issues, etc.)
       setError('An unexpected error occurred. Please try again.')
     } finally {
       setIsLoading(false)
@@ -91,18 +164,21 @@ export default function RegisterForm() {
       </CardHeader>
       <form onSubmit={handleSubmit}>
         <CardContent className="space-y-4">
+          {/* Error message display */}
           {error && (
             <div className="rounded-md bg-destructive/15 p-3 text-sm text-destructive">
               {error}
             </div>
           )}
           
+          {/* Success message display */}
           {success && (
             <div className="rounded-md bg-green-50 p-3 text-sm text-green-700">
               {success}
             </div>
           )}
           
+          {/* Full name input field */}
           <div className="space-y-2">
             <Label htmlFor="fullName">Full Name</Label>
             <Input
@@ -117,6 +193,7 @@ export default function RegisterForm() {
             />
           </div>
 
+          {/* Email input field */}
           <div className="space-y-2">
             <Label htmlFor="email">Email address</Label>
             <Input
@@ -131,6 +208,7 @@ export default function RegisterForm() {
             />
           </div>
           
+          {/* Password input field with validation hint */}
           <div className="space-y-2">
             <Label htmlFor="password">Password</Label>
             <Input
@@ -148,6 +226,7 @@ export default function RegisterForm() {
             </p>
           </div>
 
+          {/* Password confirmation field */}
           <div className="space-y-2">
             <Label htmlFor="confirmPassword">Confirm Password</Label>
             <Input
@@ -163,6 +242,7 @@ export default function RegisterForm() {
           </div>
         </CardContent>
         <CardFooter className="flex flex-col space-y-4">
+          {/* Submit button with loading state */}
           <Button
             type="submit"
             className="w-full"
@@ -171,6 +251,7 @@ export default function RegisterForm() {
             {isLoading ? 'Creating account...' : 'Create account'}
           </Button>
           
+          {/* Link to login page */}
           <p className="text-center text-sm text-muted-foreground">
             Already have an account?{' '}
             <Link href="/auth/login" className="font-medium text-primary hover:underline">

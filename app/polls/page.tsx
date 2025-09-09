@@ -8,6 +8,34 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import Link from 'next/link';
 import { Plus, Vote, BarChart3, QrCode, Edit, Trash2 } from 'lucide-react';
 
+/**
+ * User Polls Dashboard Component
+ * 
+ * Provides a comprehensive dashboard for authenticated users to view and manage their polls.
+ * Displays all polls created by the current user with statistics and management actions.
+ * 
+ * Features:
+ * - List of all user's polls with metadata (creation date, vote counts, option counts)
+ * - Poll management actions (vote, view results, share, edit, delete)
+ * - Empty state for new users with call-to-action
+ * - Real-time poll statistics
+ * - Responsive grid layout for poll cards
+ * - Authentication requirement enforcement
+ * - Poll deletion with confirmation
+ * 
+ * @example
+ * ```tsx
+ * // Access via /polls route
+ * <PollsPage />
+ * ```
+ */
+
+/**
+ * Poll Interface for Dashboard
+ * 
+ * Represents a poll in the dashboard context with aggregated statistics.
+ * Includes vote counts and option information for display purposes.
+ */
 interface Poll {
   id: string;
   title: string;
@@ -17,11 +45,21 @@ interface Poll {
   total_votes: number;
 }
 
+/**
+ * User Polls Dashboard Component
+ * 
+ * Renders a dashboard showing all polls created by the authenticated user.
+ * Provides management actions and statistics for each poll.
+ * 
+ * @returns JSX element containing the polls dashboard
+ */
 export default function PollsPage() {
+  // Authentication state
   const { user, loading } = useAuth();
+  
+  // Component state management
   const [polls, setPolls] = useState<Poll[]>([]);
   const [loadingPolls, setLoadingPolls] = useState(true);
-
 
   useEffect(() => {
     if (user) {
@@ -32,6 +70,13 @@ export default function PollsPage() {
     }
   }, [user, loading]);
 
+  /**
+   * Fetch User's Polls
+   * 
+   * Retrieves all polls created by the current authenticated user.
+   * Includes poll options and vote counts through relational queries.
+   * Transforms data for dashboard display with aggregated statistics.
+   */
   const fetchPolls = async () => {
     try {
       const { data, error } = await supabase
@@ -48,9 +93,16 @@ export default function PollsPage() {
           )
         `)
         .eq('user_id', user?.id)
-        .order('created_at', { ascending: false });
+        .order('created_at', { ascending: false }); // Show newest polls first
+      
       if (error) throw error;
 
+      /**
+       * Transform Poll Data for Dashboard
+       * 
+       * Processes raw database response to create dashboard-friendly poll objects.
+       * Calculates vote counts and formats option data for display.
+       */
       const formattedPolls = data?.map(poll => ({
         id: poll.id,
         title: poll.title,
@@ -73,6 +125,14 @@ export default function PollsPage() {
     }
   };
 
+  /**
+   * Delete Poll
+   * 
+   * Removes a poll from the database after user confirmation.
+   * Updates local state to reflect the deletion immediately.
+   * 
+   * @param pollId - ID of the poll to delete
+   */
   const deletePoll = async (pollId: string) => {
     if (!confirm('Are you sure you want to delete this poll?')) return;
 
@@ -84,12 +144,14 @@ export default function PollsPage() {
 
       if (error) throw error;
 
+      // Update local state to remove deleted poll
       setPolls(polls.filter(poll => poll.id !== pollId));
     } catch (error) {
       console.error('Error deleting poll:', error);
     }
   };
 
+  // Show loading state while checking authentication and fetching polls
   if (loading || loadingPolls) {
     return (
       <div className="container mx-auto px-4 py-8">
@@ -100,6 +162,7 @@ export default function PollsPage() {
     );
   }
 
+  // Redirect unauthenticated users to login
   if (!user) {
     return (
       <div className="container mx-auto px-4 py-8">
@@ -115,6 +178,7 @@ export default function PollsPage() {
 
   return (
     <div className="container mx-auto px-4 py-8">
+      {/* Dashboard header with create poll action */}
       <div className="flex justify-between items-center mb-8">
         <div>
           <h1 className="text-3xl font-bold">My Polls</h1>
@@ -129,6 +193,12 @@ export default function PollsPage() {
       </div>
 
       {polls.length === 0 ? (
+        /**
+         * Empty State
+         * 
+         * Displays when user has no polls yet, encouraging them to create their first poll.
+         * Provides clear call-to-action and helpful messaging.
+         */
         <div className="text-center py-12">
           <Vote className="h-16 w-16 mx-auto mb-4 text-muted-foreground" />
           <h2 className="text-xl font-semibold mb-2">No polls yet</h2>
@@ -140,6 +210,12 @@ export default function PollsPage() {
           </Link>
         </div>
       ) : (
+        /**
+         * Polls Grid
+         * 
+         * Displays all user polls in a responsive grid layout.
+         * Each poll card shows key information and management actions.
+         */
         <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
           {polls.map((poll) => (
             <Card key={poll.id} className="hover:shadow-lg transition-shadow">
@@ -151,11 +227,13 @@ export default function PollsPage() {
               </CardHeader>
               <CardContent>
                 <div className="space-y-4">
+                  {/* Poll statistics */}
                   <div className="flex justify-between text-sm text-muted-foreground">
                     <span>{poll.options.length} options</span>
                     <span>{poll.total_votes} votes</span>
                   </div>
                   
+                  {/* Poll management actions */}
                   <div className="flex flex-wrap gap-2">
                     <Link href={`/polls/${poll.id}`}>
                       <Button variant="outline" size="sm" className="flex items-center gap-1">
@@ -196,6 +274,7 @@ export default function PollsPage() {
                     </Button>
                   </div>
                   
+                  {/* Poll creation date */}
                   <div className="text-xs text-muted-foreground">
                     Created {new Date(poll.created_at).toLocaleDateString()}
                   </div>

@@ -9,12 +9,46 @@ import { useParams, useRouter } from 'next/navigation';
 import { ArrowLeft, BarChart3, QrCode, Edit, Share2, Vote } from 'lucide-react';
 import Link from 'next/link';
 
+/**
+ * Poll Display and Voting Page Component
+ * 
+ * Provides a comprehensive interface for viewing polls and casting votes.
+ * Handles both voting functionality for authenticated users and results display
+ * for users who have already voted or are poll owners.
+ * 
+ * Features:
+ * - Poll information display (title, question, creation date, vote count)
+ * - Interactive voting interface with radio button selection
+ * - Real-time vote count updates
+ * - Authentication requirement for voting
+ * - Duplicate vote prevention
+ * - Results visualization with progress bars
+ * - Poll management actions (share, edit, view results)
+ * - Owner-specific functionality
+ * 
+ * @example
+ * ```tsx
+ * // Access via /polls/[id] route
+ * <PollPage />
+ * ```
+ */
+
+/**
+ * Poll Option Interface
+ * 
+ * Represents a single voting option within a poll with vote count information.
+ */
 interface PollOption {
   id: string;
   option_text: string;
   votes_count: number;
 }
 
+/**
+ * Poll Interface
+ * 
+ * Represents a complete poll with all associated data including options and vote counts.
+ */
 interface Poll {
   id: string;
   title: string;
@@ -25,12 +59,22 @@ interface Poll {
   total_votes: number;
 }
 
+/**
+ * Poll Page Component
+ * 
+ * Renders a poll with voting interface or results display based on user state.
+ * Manages voting logic, authentication checks, and real-time data updates.
+ * 
+ * @returns JSX element containing the poll display and voting interface
+ */
 export default function PollPage() {
+  // Authentication and routing
   const { user } = useAuth();
   const params = useParams();
   const router = useRouter();
   const pollId = params.id as string;
   
+  // Component state management
   const [poll, setPoll] = useState<Poll | null>(null);
   const [loading, setLoading] = useState(true);
   const [selectedOption, setSelectedOption] = useState<string>('');
@@ -44,6 +88,13 @@ export default function PollPage() {
     }
   }, [pollId, user]);
 
+  /**
+   * Fetch Poll Data
+   * 
+   * Retrieves poll information including options and vote counts from the database.
+   * Uses Supabase's relational queries to fetch poll options and aggregate vote counts.
+   * Handles data transformation to create a complete poll object with vote statistics.
+   */
   const fetchPoll = async () => {
     try {
       const { data, error } = await supabase
@@ -65,6 +116,12 @@ export default function PollPage() {
 
       if (error) throw error;
 
+      /**
+       * Transform Poll Data
+       * 
+       * Processes the raw database response to create a structured poll object.
+       * Extracts vote counts from nested vote aggregations and calculates total votes.
+       */
       const formattedPoll = {
         ...data,
         poll_options: data.poll_options?.map(option => ({
@@ -84,6 +141,12 @@ export default function PollPage() {
     }
   };
 
+  /**
+   * Check User Vote Status
+   * 
+   * Determines if the current authenticated user has already voted on this poll.
+   * This prevents duplicate voting and determines the UI state (voting vs results).
+   */
   const checkIfUserVoted = async () => {
     if (!user) return;
 
@@ -99,16 +162,25 @@ export default function PollPage() {
         setHasVoted(true);
       }
     } catch (error) {
-      // User hasn't voted yet
+      // User hasn't voted yet - this is expected for new users
+      // Error is caught silently as it's not an actual error condition
     }
   };
 
+  /**
+   * Handle Vote Submission
+   * 
+   * Processes user vote submission with comprehensive validation and error handling.
+   * Ensures authentication, prevents duplicate voting, and updates poll data.
+   */
   const handleVote = async () => {
+    // Validate option selection
     if (!selectedOption) {
       alert('Please select an option to vote');
       return;
     }
 
+    // Ensure user is authenticated
     if (!user) {
       alert('Please sign in to vote');
       router.push('/auth/login');
@@ -118,6 +190,12 @@ export default function PollPage() {
     setIsVoting(true);
 
     try {
+      /**
+       * Submit Vote to Database
+       * 
+       * Creates a new vote record linking the user, poll, and selected option.
+       * Database constraints prevent duplicate votes from the same user.
+       */
       const { error } = await supabase
         .from('votes')
         .insert({
@@ -128,6 +206,7 @@ export default function PollPage() {
 
       if (error) throw error;
 
+      // Update local state to reflect successful vote
       setHasVoted(true);
       await fetchPoll(); // Refresh poll data to show updated vote counts
     } catch (error) {
@@ -138,12 +217,19 @@ export default function PollPage() {
     }
   };
 
+  /**
+   * Copy Share Link
+   * 
+   * Copies the current poll URL to the user's clipboard for easy sharing.
+   * Provides user feedback through browser alert.
+   */
   const copyShareLink = () => {
     const shareUrl = `${window.location.origin}/polls/${pollId}`;
     navigator.clipboard.writeText(shareUrl);
     alert('Share link copied to clipboard!');
   };
 
+  // Show loading state while fetching poll data
   if (loading) {
     return (
       <div className="container mx-auto px-4 py-8">
@@ -154,6 +240,7 @@ export default function PollPage() {
     );
   }
 
+  // Handle poll not found case
   if (!poll) {
     return (
       <div className="container mx-auto px-4 py-8">
@@ -167,10 +254,12 @@ export default function PollPage() {
     );
   }
 
+  // Determine if current user is the poll owner
   const isOwner = user?.id === poll.user_id;
 
   return (
     <div className="container mx-auto px-4 py-8 max-w-2xl">
+      {/* Navigation header */}
       <div className="mb-6">
         <Link href="/polls" className="flex items-center gap-2 text-muted-foreground hover:text-foreground mb-4">
           <ArrowLeft className="h-4 w-4" />
@@ -178,6 +267,7 @@ export default function PollPage() {
         </Link>
       </div>
 
+      {/* Poll information card */}
       <Card>
         <CardHeader>
           <CardTitle className="text-2xl">{poll.title}</CardTitle>
@@ -192,7 +282,12 @@ export default function PollPage() {
         
         <CardContent className="space-y-6">
           {!hasVoted && !isOwner ? (
-            // Voting interface
+            /**
+             * Voting Interface
+             * 
+             * Displays interactive voting options for users who haven't voted yet.
+             * Shows radio buttons for option selection and submit button.
+             */
             <div className="space-y-4">
               <h3 className="font-semibold">Cast your vote:</h3>
               <div className="space-y-2">
@@ -224,7 +319,12 @@ export default function PollPage() {
               </Button>
             </div>
           ) : (
-            // Results preview (for voted users and owners)
+            /**
+             * Results Display
+             * 
+             * Shows poll results with vote counts and percentages for users who have voted
+             * or are poll owners. Includes visual progress bars for easy interpretation.
+             */
             <div className="space-y-4">
               <div className="flex justify-between items-center">
                 <h3 className="font-semibold">
@@ -257,7 +357,7 @@ export default function PollPage() {
             </div>
           )}
 
-          {/* Action buttons */}
+          {/* Action buttons for poll management */}
           <div className="flex flex-wrap gap-2 pt-4 border-t">
             <Link href={`/polls/${poll.id}/results`}>
               <Button variant="outline" size="sm" className="flex items-center gap-1">
@@ -283,6 +383,7 @@ export default function PollPage() {
               </Button>
             </Link>
             
+            {/* Show edit button only for poll owners */}
             {isOwner && (
               <Link href={`/polls/${poll.id}/edit`}>
                 <Button variant="outline" size="sm" className="flex items-center gap-1">

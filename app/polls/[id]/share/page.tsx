@@ -9,13 +9,51 @@ import { useParams } from 'next/navigation';
 import { ArrowLeft, Share2, Copy, Download, QrCode } from 'lucide-react';
 import Link from 'next/link';
 
+/**
+ * Poll Sharing Page Component
+ * 
+ * Provides comprehensive sharing functionality for polls including link sharing,
+ * QR code generation, and web share API integration. Enables easy distribution
+ * of polls across different platforms and devices.
+ * 
+ * Features:
+ * - Shareable poll link generation
+ * - QR code generation for mobile access
+ * - Clipboard integration for easy copying
+ * - Web Share API support for native sharing
+ * - QR code download functionality
+ * - Fallback clipboard methods for older browsers
+ * - Poll information display for context
+ * - Responsive design for all devices
+ * 
+ * @example
+ * ```tsx
+ * // Access via /polls/[id]/share route
+ * <SharePollPage />
+ * ```
+ */
+
+/**
+ * Poll Interface for Sharing
+ * 
+ * Represents basic poll information needed for sharing context.
+ */
 interface Poll {
   id: string;
   title: string;
   question: string;
 }
 
+/**
+ * Poll Sharing Page Component
+ * 
+ * Renders sharing interface with multiple sharing options including
+ * link copying, QR code generation, and native web sharing.
+ * 
+ * @returns JSX element containing the poll sharing interface
+ */
 export default function SharePollPage() {
+  // Routing and state management
   const params = useParams();
   const pollId = params.id as string;
   
@@ -31,6 +69,12 @@ export default function SharePollPage() {
     }
   }, [pollId]);
 
+  /**
+   * Fetch Poll Information
+   * 
+   * Retrieves basic poll information for sharing context.
+   * Only fetches essential fields needed for sharing display.
+   */
   const fetchPoll = async () => {
     try {
       const { data, error } = await supabase
@@ -48,17 +92,37 @@ export default function SharePollPage() {
     }
   };
 
+  /**
+   * Generate Share URL and QR Code
+   * 
+   * Creates the shareable poll URL and generates a QR code for mobile access.
+   * Uses QR Server API (free service) for QR code generation.
+   */
   const generateShareUrl = () => {
     const url = `${window.location.origin}/polls/${pollId}`;
     setShareUrl(url);
     
-    // Generate QR code using QR Server API (free service)
+    /**
+     * QR Code Generation
+     * 
+     * Uses QR Server API to generate QR codes for easy mobile access.
+     * The QR code contains the full poll URL for direct navigation.
+     */
     const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(url)}`;
     setQrCodeUrl(qrUrl);
   };
 
+  /**
+   * Copy Text to Clipboard
+   * 
+   * Copies provided text to the user's clipboard with fallback support.
+   * Handles both modern clipboard API and legacy methods for older browsers.
+   * 
+   * @param text - Text to copy to clipboard
+   */
   const copyToClipboard = async (text: string) => {
     try {
+      // Try modern clipboard API first
       await navigator.clipboard.writeText(text);
       alert('Copied to clipboard!');
     } catch (error) {
@@ -74,6 +138,12 @@ export default function SharePollPage() {
     }
   };
 
+  /**
+   * Download QR Code
+   * 
+   * Triggers download of the generated QR code image.
+   * Creates a temporary download link and simulates click.
+   */
   const downloadQRCode = () => {
     const link = document.createElement('a');
     link.href = qrCodeUrl;
@@ -83,6 +153,12 @@ export default function SharePollPage() {
     document.body.removeChild(link);
   };
 
+  /**
+   * Share via Web Share API
+   * 
+   * Uses native Web Share API when available for better mobile experience.
+   * Falls back to clipboard copying if Web Share API is not supported.
+   */
   const shareViaWebShare = async () => {
     if (navigator.share && poll) {
       try {
@@ -93,13 +169,16 @@ export default function SharePollPage() {
         });
       } catch (error) {
         console.log('Error sharing:', error);
+        // Fallback to clipboard if sharing is cancelled or fails
         copyToClipboard(shareUrl);
       }
     } else {
+      // Fallback to clipboard for browsers without Web Share API
       copyToClipboard(shareUrl);
     }
   };
 
+  // Show loading state while fetching poll data
   if (loading) {
     return (
       <div className="container mx-auto px-4 py-8">
@@ -110,6 +189,7 @@ export default function SharePollPage() {
     );
   }
 
+  // Handle poll not found case
   if (!poll) {
     return (
       <div className="container mx-auto px-4 py-8">
@@ -125,6 +205,7 @@ export default function SharePollPage() {
 
   return (
     <div className="container mx-auto px-4 py-8 max-w-2xl">
+      {/* Page header with navigation */}
       <div className="mb-6">
         <Link href={`/polls/${pollId}`} className="flex items-center gap-2 text-muted-foreground hover:text-foreground mb-4">
           <ArrowLeft className="h-4 w-4" />
@@ -134,7 +215,7 @@ export default function SharePollPage() {
         <p className="text-muted-foreground">Share your poll with others using the link or QR code</p>
       </div>
 
-      {/* Poll Info */}
+      {/* Poll information for context */}
       <Card className="mb-6">
         <CardHeader>
           <CardTitle>{poll.title}</CardTitle>
@@ -142,7 +223,7 @@ export default function SharePollPage() {
         </CardHeader>
       </Card>
 
-      {/* Share Link */}
+      {/* Share link section */}
       <Card className="mb-6">
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
@@ -154,6 +235,7 @@ export default function SharePollPage() {
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
+          {/* Link input with copy button */}
           <div className="flex gap-2">
             <Input
               value={shareUrl}
@@ -170,6 +252,7 @@ export default function SharePollPage() {
             </Button>
           </div>
           
+          {/* Native share button */}
           <Button
             onClick={shareViaWebShare}
             className="w-full flex items-center gap-2"
@@ -180,7 +263,7 @@ export default function SharePollPage() {
         </CardContent>
       </Card>
 
-      {/* QR Code */}
+      {/* QR code section */}
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
@@ -192,6 +275,7 @@ export default function SharePollPage() {
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
+          {/* QR code display */}
           <div className="flex justify-center">
             {qrCodeUrl ? (
               <div className="p-4 bg-white rounded-lg border-2 border-dashed border-muted-foreground/25">
@@ -199,7 +283,7 @@ export default function SharePollPage() {
                   src={qrCodeUrl}
                   alt="QR Code for poll"
                   className="w-64 h-64"
-                  onError={() => setQrCodeUrl('')}
+                  onError={() => setQrCodeUrl('')} // Handle QR code generation failure
                 />
               </div>
             ) : (
@@ -209,6 +293,7 @@ export default function SharePollPage() {
             )}
           </div>
           
+          {/* QR code actions */}
           {qrCodeUrl && (
             <div className="flex gap-2">
               <Button
@@ -231,6 +316,7 @@ export default function SharePollPage() {
             </div>
           )}
           
+          {/* QR code usage instructions */}
           <div className="text-sm text-muted-foreground text-center">
             <p>People can scan this QR code with their phone camera to quickly access your poll</p>
           </div>
