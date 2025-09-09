@@ -2,6 +2,7 @@
 
 import { createContext, useContext, useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabaseClient'
+import { User, AuthContextType } from '@/lib/types'
 import type { User as SupabaseUser } from '@supabase/supabase-js'
 
 /**
@@ -19,38 +20,6 @@ import type { User as SupabaseUser } from '@supabase/supabase-js'
  * 
  * @see https://supabase.com/docs/guides/auth/auth-helpers/nextjs
  */
-
-/**
- * User Interface
- * 
- * Represents the authenticated user with essential profile information.
- * This interface abstracts the Supabase user object to provide only
- * the fields needed by the application.
- */
-interface User {
-  id: string
-  email: string
-  fullName?: string
-}
-
-/**
- * Authentication Context Type
- * 
- * Defines the shape of the authentication context that will be provided
- * to all components in the application tree.
- */
-interface AuthContextType {
-  /** Current authenticated user or null if not logged in */
-  user: User | null
-  /** Loading state for initial auth check */
-  loading: boolean
-  /** Sign in with email and password */
-  signIn: (email: string, password: string) => Promise<{ error?: string }>
-  /** Register new user with email, password, and full name */
-  signUp: (email: string, password: string, fullName: string) => Promise<{ error?: string }>
-  /** Sign out current user */
-  signOut: () => Promise<void>
-}
 
 // Create the authentication context with undefined default value
 // This ensures useAuth hook throws an error if used outside AuthProvider

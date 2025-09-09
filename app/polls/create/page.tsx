@@ -1,12 +1,14 @@
 'use client';
 
-import { useState } from 'react';
 import { useAuth } from '@/context/AuthContext';
-import { supabase } from '@/lib/supabaseClient';
+import { createPoll } from '@/lib/actions';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { PageHeader, LoadingSpinner, WarningCard } from '@/components/shared';
+import { useFormState } from '@/hooks/usePoll';
+import { CreatePollFormData } from '@/lib/types';
 import { useRouter } from 'next/navigation';
 import { Plus, Trash2, ArrowLeft } from 'lucide-react';
 import Link from 'next/link';
@@ -37,8 +39,31 @@ import Link from 'next/link';
 /**
  * Create Poll Page Component
  * 
+ * Provides a comprehensive interface for authenticated users to create new polls.
+ * Handles poll creation with title, question, and multiple options, including
+ * dynamic option management and form validation.
+ * 
+ * Features:
+ * - Poll title and question input
+ * - Dynamic option management (add/remove options)
+ * - Option limit enforcement (2-10 options)
+ * - Form validation and error handling
+ * - Loading states during submission
+ * - Automatic redirection to created poll
+ * - Authentication requirement enforcement
+ * 
+ * @example
+ * ```tsx
+ * // Access via /polls/create route
+ * <CreatePollPage />
+ * ```
+ */
+
+/**
+ * Create Poll Page Component
+ * 
  * Renders a form for creating new polls with comprehensive validation,
- * dynamic option management, and seamless integration with the database.
+ * dynamic option management, and seamless integration with Server Actions.
  * 
  * @returns JSX element containing the poll creation form
  */
@@ -47,13 +72,51 @@ export default function CreatePollPage() {
   const { user, loading } = useAuth();
   const router = useRouter();
   
-  // Form state management
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const [formData, setFormData] = useState({
+  // Form state management using custom hook
+  const {
+    formData,
+    errors,
+    isSubmitting,
+    setIsSubmitting,
+    updateField,
+    updateFormData,
+    validate,
+    reset
+  } = useFormState<CreatePollFormData>({
     title: '',
     question: '',
     options: ['', ''] // Start with 2 empty options as minimum requirement
   });
+
+  /**
+   * Form Validation Function
+   * 
+   * Validates the poll creation form data.
+   * 
+   * @param data - Form data to validate
+   * @returns Validation result with errors
+   */
+  const validateForm = (data: CreatePollFormData) => {
+    const validationErrors: Record<string, string> = {};
+
+    if (!data.title.trim()) {
+      validationErrors.title = 'Title is required';
+    }
+
+    if (!data.question.trim()) {
+      validationErrors.question = 'Question is required';
+    }
+
+    const validOptions = data.options.filter(option => option.trim());
+    if (validOptions.length < 2) {
+      validationErrors.options = 'At least 2 options are required';
+    }
+
+    return {
+      isValid: Object.keys(validationErrors).length === 0,
+      errors: validationErrors
+    };
+  };
 
   /**
    * Add Poll Option
@@ -63,8 +126,7 @@ export default function CreatePollPage() {
    */
   const addOption = () => {
     if (formData.options.length < 10) { // Limit to 10 options for UX
-      setFormData({
-        ...formData,
+      updateFormData({
         options: [...formData.options, '']
       });
     }
@@ -81,10 +143,7 @@ export default function CreatePollPage() {
   const removeOption = (index: number) => {
     if (formData.options.length > 2) { // Keep minimum 2 options
       const newOptions = formData.options.filter((_, i) => i !== index);
-      setFormData({
-        ...formData,
-        options: newOptions
-      });
+      updateFormData({ options: newOptions });
     }
   };
 
@@ -99,16 +158,13 @@ export default function CreatePollPage() {
   const updateOption = (index: number, value: string) => {
     const newOptions = [...formData.options];
     newOptions[index] = value;
-    setFormData({
-      ...formData,
-      options: newOptions
-    });
+    updateFormData({ options: newOptions });
   };
 
   /**
    * Handle Form Submission
    * 
-   * Processes the poll creation form with comprehensive validation and database operations.
+   * Processes the poll creation form with comprehensive validation and Server Action.
    * Creates both the poll record and associated options in a transactional manner.
    * 
    * @param e - React form submit event
@@ -122,62 +178,27 @@ export default function CreatePollPage() {
       return;
     }
 
-    // Validate required fields
-    if (!formData.title.trim() || !formData.question.trim()) {
-      alert('Please fill in the title and question');
-      return;
-    }
-
-    // Filter out empty options and validate minimum count
-    const validOptions = formData.options.filter(option => option.trim());
-    if (validOptions.length < 2) {
-      alert('Please provide at least 2 options');
+    // Validate form data
+    const validation = validate();
+    if (!validation.isValid) {
       return;
     }
 
     setIsSubmitting(true);
 
     try {
-      /**
-       * Create Poll Record
-       * 
-       * First, create the main poll record with title, question, and user association.
-       * Uses Supabase's insert with select to get the created record's ID.
-       */
-      const { data: pollData, error: pollError } = await supabase
-        .from('polls')
-        .insert({
-          title: formData.title.trim(),
-          question: formData.question.trim(),
-          user_id: user.id
-        })
-        .select()
-        .single();
-
-      if (pollError) throw pollError;
-
-      /**
-       * Create Poll Options
-       * 
-       * Create all poll options in a single batch operation for efficiency.
-       * Each option is linked to the poll via poll_id foreign key.
-       */
-      const optionsData = validOptions.map(option => ({
-        poll_id: pollData.id,
-        option_text: option.trim()
-      }));
-
-      const { error: optionsError } = await supabase
-        .from('poll_options')
-        .insert(optionsData);
-
-      if (optionsError) throw optionsError;
-
-      // Redirect to the newly created poll
-      router.push(`/polls/${pollData.id}`);
+      // Call Server Action to create poll
+      const result = await createPoll(formData, user.id);
+      
+      if (result.success && result.data) {
+        // Redirect to the newly created poll
+        router.push(`/polls/${result.data.id}`);
+      } else {
+        alert(result.error || 'Failed to create poll. Please try again.');
+      }
     } catch (error) {
       console.error('Error creating poll:', error);
-      alert('Failed to create poll. Please try again.');
+      alert('An unexpected error occurred. Please try again.');
     } finally {
       setIsSubmitting(false);
     }
@@ -185,13 +206,7 @@ export default function CreatePollPage() {
 
   // Show loading state while checking authentication
   if (loading) {
-    return (
-      <div className="container mx-auto px-4 py-8">
-        <div className="flex justify-center items-center min-h-[400px]">
-          <div className="text-lg">Loading...</div>
-        </div>
-      </div>
-    );
+    return <LoadingSpinner message="Loading..." />;
   }
 
   // Redirect unauthenticated users to login
@@ -211,14 +226,12 @@ export default function CreatePollPage() {
   return (
     <div className="container mx-auto px-4 py-8 max-w-2xl">
       {/* Page header with navigation */}
-      <div className="mb-6">
-        <Link href="/polls" className="flex items-center gap-2 text-muted-foreground hover:text-foreground mb-4">
-          <ArrowLeft className="h-4 w-4" />
-          Back to Polls
-        </Link>
-        <h1 className="text-3xl font-bold">Create New Poll</h1>
-        <p className="text-muted-foreground">Create a poll and share it with others</p>
-      </div>
+      <PageHeader
+        title="Create New Poll"
+        description="Create a poll and share it with others"
+        backUrl="/polls"
+        backText="Back to Polls"
+      />
 
       {/* Poll creation form */}
       <Card>
@@ -237,9 +250,12 @@ export default function CreatePollPage() {
                 id="title"
                 placeholder="Enter a catchy title for your poll"
                 value={formData.title}
-                onChange={(e) => setFormData({ ...formData, title: e.target.value })}
+                onChange={(e) => updateField('title', e.target.value)}
                 required
               />
+              {errors.title && (
+                <p className="text-sm text-destructive">{errors.title}</p>
+              )}
             </div>
 
             {/* Poll question input */}
@@ -249,9 +265,12 @@ export default function CreatePollPage() {
                 id="question"
                 placeholder="What question do you want to ask?"
                 value={formData.question}
-                onChange={(e) => setFormData({ ...formData, question: e.target.value })}
+                onChange={(e) => updateField('question', e.target.value)}
                 required
               />
+              {errors.question && (
+                <p className="text-sm text-destructive">{errors.question}</p>
+              )}
             </div>
 
             {/* Dynamic options management */}
@@ -298,6 +317,10 @@ export default function CreatePollPage() {
                   </div>
                 ))}
               </div>
+
+              {errors.options && (
+                <p className="text-sm text-destructive">{errors.options}</p>
+              )}
 
               <p className="text-sm text-muted-foreground">
                 Add 2-10 options for your poll
