@@ -14,50 +14,34 @@ import { Plus, Trash2, ArrowLeft } from 'lucide-react';
 import Link from 'next/link';
 
 /**
- * Create Poll Page Component
+ * Form Validation Function
  * 
- * Provides a comprehensive interface for authenticated users to create new polls.
- * Handles poll creation with title, question, and multiple options, including
- * dynamic option management and form validation.
+ * Validates the poll creation form data.
  * 
- * Features:
- * - Poll title and question input
- * - Dynamic option management (add/remove options)
- * - Option limit enforcement (2-10 options)
- * - Form validation and error handling
- * - Loading states during submission
- * - Automatic redirection to created poll
- * - Authentication requirement enforcement
- * 
- * @example
- * ```tsx
- * // Access via /polls/create route
- * <CreatePollPage />
- * ```
+ * @param data - Form data to validate
+ * @returns Validation result with errors
  */
+function validateForm(data: CreatePollFormData) {
+  const validationErrors: Record<string, string> = {};
 
-/**
- * Create Poll Page Component
- * 
- * Provides a comprehensive interface for authenticated users to create new polls.
- * Handles poll creation with title, question, and multiple options, including
- * dynamic option management and form validation.
- * 
- * Features:
- * - Poll title and question input
- * - Dynamic option management (add/remove options)
- * - Option limit enforcement (2-10 options)
- * - Form validation and error handling
- * - Loading states during submission
- * - Automatic redirection to created poll
- * - Authentication requirement enforcement
- * 
- * @example
- * ```tsx
- * // Access via /polls/create route
- * <CreatePollPage />
- * ```
- */
+  if (!data.title.trim()) {
+    validationErrors.title = 'Title is required';
+  }
+
+  if (!data.question.trim()) {
+    validationErrors.question = 'Question is required';
+  }
+
+  const validOptions = data.options.filter(option => option.trim());
+  if (validOptions.length < 2) {
+    validationErrors.options = 'At least 2 options are required';
+  }
+
+  return {
+    isValid: Object.keys(validationErrors).length === 0,
+    errors: validationErrors
+  };
+}
 
 /**
  * Create Poll Page Component
@@ -86,37 +70,7 @@ export default function CreatePollPage() {
     title: '',
     question: '',
     options: ['', ''] // Start with 2 empty options as minimum requirement
-  });
-
-  /**
-   * Form Validation Function
-   * 
-   * Validates the poll creation form data.
-   * 
-   * @param data - Form data to validate
-   * @returns Validation result with errors
-   */
-  const validateForm = (data: CreatePollFormData) => {
-    const validationErrors: Record<string, string> = {};
-
-    if (!data.title.trim()) {
-      validationErrors.title = 'Title is required';
-    }
-
-    if (!data.question.trim()) {
-      validationErrors.question = 'Question is required';
-    }
-
-    const validOptions = data.options.filter(option => option.trim());
-    if (validOptions.length < 2) {
-      validationErrors.options = 'At least 2 options are required';
-    }
-
-    return {
-      isValid: Object.keys(validationErrors).length === 0,
-      errors: validationErrors
-    };
-  };
+  }, validateForm);
 
   /**
    * Add Poll Option
@@ -188,7 +142,7 @@ export default function CreatePollPage() {
 
     try {
       // Call Server Action to create poll
-      const result = await createPoll(formData, user.id);
+      const result = await createPoll(formData);
       
       if (result.success && result.data) {
         // Redirect to the newly created poll

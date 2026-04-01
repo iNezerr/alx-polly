@@ -5,7 +5,7 @@
  * These components follow consistent patterns and provide better maintainability.
  */
 
-import { ReactNode } from 'react';
+import { ReactNode, ComponentType } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { ArrowLeft, Loader2 } from 'lucide-react';
@@ -263,7 +263,7 @@ export function EmptyState({
   actionText, 
   actionUrl 
 }: {
-  icon: React.ComponentType<{ className?: string }>;
+  icon: ComponentType<{ className?: string }>;
   title: string;
   description: string;
   actionText: string;

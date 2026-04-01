@@ -6,6 +6,7 @@
  */
 
 import { ApiResponse } from '@/lib/types';
+import { ReactNode, ComponentType, ErrorInfo } from 'react';
 
 /**
  * Error Types
@@ -288,9 +289,9 @@ export class ErrorHandler {
  * Props for error boundary components.
  */
 export interface ErrorBoundaryProps {
-  children: React.ReactNode;
-  fallback?: React.ComponentType<{ error: Error; reset: () => void }>;
-  onError?: (error: Error, errorInfo: React.ErrorInfo) => void;
+  children: ReactNode;
+  fallback?: ComponentType<{ error: Error; reset: () => void }>;
+  onError?: (error: Error, errorInfo: ErrorInfo) => void;
 }
 
 /**

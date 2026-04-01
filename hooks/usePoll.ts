@@ -7,7 +7,6 @@
  */
 
 import { useState, useEffect, useCallback } from 'react';
-import { useAuth } from '@/context/AuthContext';
 import { fetchPollWithOptions, fetchUserPolls, checkUserVoteStatus } from '@/lib/actions';
 import { createPoll, updatePoll, deletePoll, submitVote } from '@/lib/actions';
 import { Poll, PollSummary, CreatePollFormData, EditPollFormData, ApiResponse } from '@/lib/types';
@@ -22,7 +21,6 @@ import { Poll, PollSummary, CreatePollFormData, EditPollFormData, ApiResponse } 
  * @returns Object containing poll data, loading states, and operations
  */
 export function usePoll(pollId?: string) {
-  const { user } = useAuth();
   const [poll, setPoll] = useState<Poll | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -33,15 +31,14 @@ export function usePoll(pollId?: string) {
     setLoading(true);
     setError(null);
     
-    try {
-      const pollData = await fetchPollWithOptions(pollId);
-      setPoll(pollData);
-    } catch (err) {
-      setError('Failed to fetch poll');
-      console.error('Error fetching poll:', err);
-    } finally {
-      setLoading(false);
+    const result = await fetchPollWithOptions(pollId);
+    if (result.success) {
+      setPoll(result.data ?? null);
+    } else {
+      setError(result.error || 'Failed to fetch poll');
+      setPoll(null);
     }
+    setLoading(false);
   }, [pollId]);
 
   useEffect(() => {
@@ -49,36 +46,32 @@ export function usePoll(pollId?: string) {
   }, [fetchPoll]);
 
   const createPollAction = useCallback(async (formData: CreatePollFormData): Promise<ApiResponse<Poll>> => {
-    if (!user) {
-      return { success: false, error: 'User not authenticated' };
-    }
-    
-    const result = await createPoll(formData, user.id);
+    const result = await createPoll(formData);
     if (result.success) {
       setPoll(result.data || null);
     }
     return result;
-  }, [user]);
+  }, []);
 
   const updatePollAction = useCallback(async (formData: EditPollFormData): Promise<ApiResponse> => {
-    if (!user || !pollId) {
-      return { success: false, error: 'User not authenticated or poll ID missing' };
+    if (!pollId) {
+      return { success: false, error: 'Poll ID missing' };
     }
     
-    const result = await updatePoll(pollId, formData, user.id);
+    const result = await updatePoll(pollId, formData);
     if (result.success) {
       await fetchPoll(); // Refresh poll data
     }
     return result;
-  }, [user, pollId, fetchPoll]);
+  }, [pollId, fetchPoll]);
 
   const deletePollAction = useCallback(async (): Promise<ApiResponse> => {
-    if (!user || !pollId) {
-      return { success: false, error: 'User not authenticated or poll ID missing' };
+    if (!pollId) {
+      return { success: false, error: 'Poll ID missing' };
     }
     
-    return await deletePoll(pollId, user.id);
-  }, [user, pollId]);
+    return await deletePoll(pollId);
+  }, [pollId]);
 
   return {
     poll,
@@ -99,47 +92,36 @@ export function usePoll(pollId?: string) {
  * @returns Object containing user polls, loading state, and operations
  */
 export function useUserPolls() {
-  const { user } = useAuth();
   const [polls, setPolls] = useState<PollSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   const fetchPolls = useCallback(async () => {
-    if (!user) {
-      setLoading(false);
-      return;
-    }
-    
     setLoading(true);
     setError(null);
     
-    try {
-      const pollsData = await fetchUserPolls(user.id);
-      setPolls(pollsData);
-    } catch (err) {
-      setError('Failed to fetch polls');
-      console.error('Error fetching user polls:', err);
-    } finally {
-      setLoading(false);
+    const result = await fetchUserPolls();
+    if (result.success) {
+      setPolls((result.data ?? []) as PollSummary[]);
+    } else {
+      setError(result.error || 'Failed to fetch polls');
+      setPolls([]);
     }
-  }, [user]);
+    setLoading(false);
+  }, []);
 
   useEffect(() => {
     fetchPolls();
   }, [fetchPolls]);
 
   const deletePollAction = useCallback(async (pollId: string): Promise<ApiResponse> => {
-    if (!user) {
-      return { success: false, error: 'User not authenticated' };
-    }
-    
-    const result = await deletePoll(pollId, user.id);
+    const result = await deletePoll(pollId);
     if (result.success) {
       // Remove poll from local state
       setPolls(prev => prev.filter(poll => poll.id !== pollId));
     }
     return result;
-  }, [user]);
+  }, []);
 
   return {
     polls,
@@ -159,14 +141,13 @@ export function useUserPolls() {
  * @returns Object containing vote status, loading state, and voting operations
  */
 export function useVoting(pollId: string) {
-  const { user } = useAuth();
   const [hasVoted, setHasVoted] = useState(false);
   const [loading, setLoading] = useState(true);
   const [voting, setVoting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const checkVoteStatus = useCallback(async () => {
-    if (!user || !pollId) {
+    if (!pollId) {
       setLoading(false);
       return;
     }
@@ -175,7 +156,7 @@ export function useVoting(pollId: string) {
     setError(null);
     
     try {
-      const voted = await checkUserVoteStatus(pollId, user.id);
+      const voted = await checkUserVoteStatus(pollId);
       setHasVoted(voted);
     } catch (err) {
       setError('Failed to check vote status');
@@ -183,22 +164,22 @@ export function useVoting(pollId: string) {
     } finally {
       setLoading(false);
     }
-  }, [user, pollId]);
+  }, [pollId]);
 
   useEffect(() => {
     checkVoteStatus();
   }, [checkVoteStatus]);
 
   const submitVoteAction = useCallback(async (optionId: string): Promise<ApiResponse> => {
-    if (!user || !pollId) {
-      return { success: false, error: 'User not authenticated or poll ID missing' };
+    if (!pollId) {
+      return { success: false, error: 'Poll ID missing' };
     }
     
     setVoting(true);
     setError(null);
     
     try {
-      const result = await submitVote(pollId, optionId, user.id);
+      const result = await submitVote(pollId, optionId);
       if (result.success) {
         setHasVoted(true);
       }
@@ -210,7 +191,7 @@ export function useVoting(pollId: string) {
     } finally {
       setVoting(false);
     }
-  }, [user, pollId]);
+  }, [pollId]);
 
   return {
     hasVoted,

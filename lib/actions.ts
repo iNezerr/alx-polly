@@ -9,26 +9,32 @@
 
 'use server';
 
-import { supabase } from '@/lib/supabaseClient';
+import { createServerSupabaseClient } from '@/lib/supabaseServer';
 import { Poll, PollOption, CreatePollFormData, EditPollFormData, ApiResponse } from '@/lib/types';
 import { revalidatePath } from 'next/cache';
-import { redirect } from 'next/navigation';
 
 /**
  * Server Action: Create Poll
  * 
- * Creates a new poll with associated options in a transactional manner.
- * This Server Action handles the complete poll creation process securely.
+ * Creates a new poll with associated options. The authenticated user is derived
+ * from the request session; no `userId` is accepted from the client.
+ * If creating the options fails, the poll row is deleted to keep the data consistent.
  * 
  * @param formData - Poll creation form data
- * @param userId - ID of the user creating the poll
  * @returns Promise resolving to API response with poll data or error
  */
 export async function createPoll(
-  formData: CreatePollFormData,
-  userId: string
+  formData: CreatePollFormData
 ): Promise<ApiResponse<Poll>> {
   try {
+    const supabase = await createServerSupabaseClient();
+
+    // Get the authenticated user from the session
+    const { data: { user }, error: authError } = await supabase.auth.getUser();
+    if (authError || !user) {
+      return { success: false, error: 'You must be signed in to create a poll' };
+    }
+
     // Validate input data
     if (!formData.title.trim() || !formData.question.trim()) {
       return {
@@ -51,7 +57,7 @@ export async function createPoll(
       .insert({
         title: formData.title.trim(),
         question: formData.question.trim(),
-        user_id: userId
+        user_id: user.id
       })
       .select()
       .single();
@@ -76,6 +82,8 @@ export async function createPoll(
 
     if (optionsError) {
       console.error('Error creating poll options:', optionsError);
+      // Compensating delete: remove the poll so no orphaned poll rows remain
+      await supabase.from('polls').delete().eq('id', pollData.id);
       return {
         success: false,
         error: 'Failed to create poll options'
@@ -103,18 +111,27 @@ export async function createPoll(
  * 
  * Updates an existing poll with new title, question, and options.
  * Handles complex option management including additions, updates, and deletions.
+ * Options removed from `formData.options` are deleted from the database (and their
+ * votes cascade-deleted per the schema's ON DELETE CASCADE constraint).
+ * The authenticated user is derived from the request session.
  * 
  * @param pollId - ID of the poll to update
  * @param formData - Updated poll form data
- * @param userId - ID of the user updating the poll
  * @returns Promise resolving to API response
  */
 export async function updatePoll(
   pollId: string,
-  formData: EditPollFormData,
-  userId: string
+  formData: EditPollFormData
 ): Promise<ApiResponse> {
   try {
+    const supabase = await createServerSupabaseClient();
+
+    // Get the authenticated user from the session
+    const { data: { user }, error: authError } = await supabase.auth.getUser();
+    if (authError || !user) {
+      return { success: false, error: 'You must be signed in to update a poll' };
+    }
+
     // Validate input data
     if (!formData.title.trim() || !formData.question.trim()) {
       return {
@@ -138,7 +155,7 @@ export async function updatePoll(
       .eq('id', pollId)
       .single();
 
-    if (pollError || !poll || poll.user_id !== userId) {
+    if (pollError || !poll || poll.user_id !== user.id) {
       return {
         success: false,
         error: 'Poll not found or access denied'
@@ -160,6 +177,37 @@ export async function updatePoll(
         success: false,
         error: 'Failed to update poll'
       };
+    }
+
+    // Fetch current option IDs from the database
+    const { data: currentOptions, error: fetchOptionsError } = await supabase
+      .from('poll_options')
+      .select('id')
+      .eq('poll_id', pollId);
+
+    if (fetchOptionsError) {
+      return { success: false, error: 'Failed to fetch poll options' };
+    }
+
+    // Determine which options have been removed
+    const incomingOptionIds = new Set(
+      formData.options.filter(o => o.id).map(o => o.id as string)
+    );
+    const optionIdsToDelete = (currentOptions ?? [])
+      .map(o => o.id)
+      .filter(id => !incomingOptionIds.has(id));
+
+    // Delete removed options (votes cascade-delete per schema ON DELETE CASCADE)
+    if (optionIdsToDelete.length > 0) {
+      const { error: deleteError } = await supabase
+        .from('poll_options')
+        .delete()
+        .in('id', optionIdsToDelete);
+
+      if (deleteError) {
+        console.error('Error deleting removed options:', deleteError);
+        return { success: false, error: 'Failed to delete removed options' };
+      }
     }
 
     // Handle poll options updates
@@ -224,17 +272,23 @@ export async function updatePoll(
  * Server Action: Delete Poll
  * 
  * Deletes a poll and all associated data (options, votes).
- * Includes ownership verification for security.
+ * The authenticated user is derived from the request session.
  * 
  * @param pollId - ID of the poll to delete
- * @param userId - ID of the user requesting deletion
  * @returns Promise resolving to API response
  */
 export async function deletePoll(
-  pollId: string,
-  userId: string
+  pollId: string
 ): Promise<ApiResponse> {
   try {
+    const supabase = await createServerSupabaseClient();
+
+    // Get the authenticated user from the session
+    const { data: { user }, error: authError } = await supabase.auth.getUser();
+    if (authError || !user) {
+      return { success: false, error: 'You must be signed in to delete a poll' };
+    }
+
     // Verify user owns the poll
     const { data: poll, error: pollError } = await supabase
       .from('polls')
@@ -242,7 +296,7 @@ export async function deletePoll(
       .eq('id', pollId)
       .single();
 
-    if (pollError || !poll || poll.user_id !== userId) {
+    if (pollError || !poll || poll.user_id !== user.id) {
       return {
         success: false,
         error: 'Poll not found or access denied'
@@ -282,19 +336,25 @@ export async function deletePoll(
  * Server Action: Submit Vote
  * 
  * Records a user's vote for a specific poll option.
- * Includes duplicate vote prevention and validation.
+ * The authenticated user is derived from the request session.
  * 
  * @param pollId - ID of the poll being voted on
  * @param optionId - ID of the selected option
- * @param userId - ID of the user voting
  * @returns Promise resolving to API response
  */
 export async function submitVote(
   pollId: string,
-  optionId: string,
-  userId: string
+  optionId: string
 ): Promise<ApiResponse> {
   try {
+    const supabase = await createServerSupabaseClient();
+
+    // Get the authenticated user from the session
+    const { data: { user }, error: authError } = await supabase.auth.getUser();
+    if (authError || !user) {
+      return { success: false, error: 'You must be signed in to vote' };
+    }
+
     // Verify the poll and option exist
     const { data: poll, error: pollError } = await supabase
       .from('polls')
@@ -328,7 +388,7 @@ export async function submitVote(
       .from('votes')
       .select('id')
       .eq('poll_id', pollId)
-      .eq('user_id', userId)
+      .eq('user_id', user.id)
       .single();
 
     if (existingVote) {
@@ -344,7 +404,7 @@ export async function submitVote(
       .insert({
         poll_id: pollId,
         option_id: optionId,
-        user_id: userId
+        user_id: user.id
       });
 
     if (error) {
@@ -375,13 +435,16 @@ export async function submitVote(
  * Database Query: Fetch Poll with Options
  * 
  * Retrieves a complete poll with options and vote counts.
- * This is a reusable query function for consistent data fetching.
+ * Returns a typed ApiResponse so callers can distinguish "not found" from
+ * "request failed" and render the appropriate UI state.
  * 
  * @param pollId - ID of the poll to fetch
- * @returns Promise resolving to poll data or null
+ * @returns Promise resolving to ApiResponse containing poll data or an error message
  */
-export async function fetchPollWithOptions(pollId: string): Promise<Poll | null> {
+export async function fetchPollWithOptions(pollId: string): Promise<ApiResponse<Poll>> {
   try {
+    const supabase = await createServerSupabaseClient();
+
     const { data, error } = await supabase
       .from('polls')
       .select(`
@@ -399,38 +462,60 @@ export async function fetchPollWithOptions(pollId: string): Promise<Poll | null>
       .eq('id', pollId)
       .single();
 
-    if (error) throw error;
+    if (error) {
+      console.error('Error fetching poll:', error);
+      return { success: false, error: 'Failed to fetch poll' };
+    }
+
+    if (!data) {
+      return { success: false, error: 'Poll not found' };
+    }
 
     // Transform the data to match our Poll interface
     const formattedPoll: Poll = {
       ...data,
-      poll_options: data.poll_options?.map(option => ({
+      poll_options: data.poll_options?.map((option: any) => ({
         id: option.id,
         option_text: option.option_text,
         votes_count: option.votes?.[0]?.count || 0
       })) || [],
-      total_votes: data.poll_options?.reduce((total, option) => 
+      total_votes: data.poll_options?.reduce((total: number, option: any) => 
         total + (option.votes?.[0]?.count || 0), 0) || 0
     };
 
-    return formattedPoll;
+    return { success: true, data: formattedPoll };
   } catch (error) {
-    console.error('Error fetching poll:', error);
-    return null;
+    console.error('Unexpected error fetching poll:', error);
+    return { success: false, error: 'An unexpected error occurred' };
   }
 }
 
 /**
  * Database Query: Fetch User Polls
  * 
- * Retrieves all polls created by a specific user with vote statistics.
- * Used for the user's polls dashboard.
+ * Retrieves all polls created by the currently authenticated user with vote statistics.
+ * Returns a typed ApiResponse so callers can distinguish an empty list from a
+ * network/server error and render the appropriate UI state.
  * 
- * @param userId - ID of the user
- * @returns Promise resolving to array of poll summaries
+ * @returns Promise resolving to ApiResponse containing the user's polls or an error message
  */
-export async function fetchUserPolls(userId: string) {
+export async function fetchUserPolls(): Promise<ApiResponse<{
+  id: string;
+  title: string;
+  question: string;
+  created_at: string;
+  options: { id: string; text: string; votes: number }[];
+  total_votes: number;
+}[]>> {
   try {
+    const supabase = await createServerSupabaseClient();
+
+    // Get the authenticated user from the session
+    const { data: { user }, error: authError } = await supabase.auth.getUser();
+    if (authError || !user) {
+      return { success: false, error: 'You must be signed in to view your polls' };
+    }
+
     const { data, error } = await supabase
       .from('polls')
       .select(`
@@ -444,52 +529,61 @@ export async function fetchUserPolls(userId: string) {
           votes (count)
         )
       `)
-      .eq('user_id', userId)
+      .eq('user_id', user.id)
       .order('created_at', { ascending: false });
 
-    if (error) throw error;
+    if (error) {
+      console.error('Error fetching user polls:', error);
+      return { success: false, error: 'Failed to fetch your polls' };
+    }
 
     // Transform data for dashboard display
-    return data?.map(poll => ({
+    const polls = (data ?? []).map((poll: any) => ({
       id: poll.id,
       title: poll.title,
       question: poll.question,
       created_at: poll.created_at,
-      options: poll.poll_options?.map(option => ({
+      options: poll.poll_options?.map((option: any) => ({
         id: option.id,
         text: option.option_text,
         votes: option.votes?.[0]?.count || 0
       })) || [],
-      total_votes: poll.poll_options?.reduce((total, option) => 
+      total_votes: poll.poll_options?.reduce((total: number, option: any) => 
         total + (option.votes?.[0]?.count || 0), 0) || 0
-    })) || [];
+    }));
+
+    return { success: true, data: polls };
   } catch (error) {
-    console.error('Error fetching user polls:', error);
-    return [];
+    console.error('Unexpected error fetching user polls:', error);
+    return { success: false, error: 'An unexpected error occurred' };
   }
 }
 
 /**
  * Database Query: Check User Vote Status
  * 
- * Determines if a user has already voted on a specific poll.
+ * Determines if the authenticated user has already voted on a specific poll.
  * 
  * @param pollId - ID of the poll
- * @param userId - ID of the user
- * @returns Promise resolving to boolean indicating if user has voted
+ * @returns Promise resolving to boolean indicating if the current user has voted
  */
-export async function checkUserVoteStatus(pollId: string, userId: string): Promise<boolean> {
+export async function checkUserVoteStatus(pollId: string): Promise<boolean> {
   try {
+    const supabase = await createServerSupabaseClient();
+
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return false;
+
     const { data } = await supabase
       .from('votes')
       .select('id')
       .eq('poll_id', pollId)
-      .eq('user_id', userId)
+      .eq('user_id', user.id)
       .single();
 
     return !!data;
-  } catch (error) {
-    // User hasn't voted yet - this is expected for new users
+  } catch {
+    // User hasn't voted yet – this is expected for new users
     return false;
   }
 }
